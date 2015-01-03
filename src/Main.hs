@@ -14,22 +14,22 @@ import System.Environment
 
 
 nextLocation :: String -> HT.ResponseHeaders -> Maybe String
-nextLocation url xs = getFullURL <$> C.unpack <$> lookup "Location" xs
+nextLocation url xs = (getFullURL . C.unpack) <$> lookup "Location" xs
     where getFullURL x | isInfixOf "http://" x || isInfixOf "https://" x = x
                        | otherwise = (HT.parseUrl url >>= constructURL) ++ x
           constructURL r | HT.secure r = "https://" ++ C.unpack (HT.host r)
                          | otherwise   = "http://" ++ C.unpack (HT.host r)
 
 
-foldRedirects :: String -> [String] -> IO [String]
-foldRedirects url xs = do
+fetchRedirects :: String -> [String] -> IO [String]
+fetchRedirects url xs = do
     let opts = defaults & redirects .~ 0
     try (getWith opts url) >>= check
     where
         check (Left (HT.StatusCodeException s h _))
             | s ^. statusCode `div` 100 == 3 =
                 case nextLocation url h of
-                    Just location -> foldRedirects location (xs ++ [url])
+                    Just location -> fetchRedirects location (xs ++ [url])
                     Nothing -> error "unexpected missing location header"
             | otherwise = do
                 print s
@@ -51,7 +51,7 @@ main = do
     argv <- getArgs
     case argv of
         (url:_) -> do
-            urls <- foldRedirects url []
+            urls <- fetchRedirects url []
             printResult urls
         _       -> error "bad input, it should be: trace-url <your-url>"
 
